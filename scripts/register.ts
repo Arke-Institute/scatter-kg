@@ -123,7 +123,7 @@ async function main() {
   } catch (error) {
     console.error(`\nError: ${(error as Error).message}`);
     console.error('Make sure all required environment variables are set.');
-    console.error('Required: SCATTER_KLADOS, KG_EXTRACTOR_KLADOS');
+    console.error('Required: SCATTER_KLADOS, KG_EXTRACTOR_KLADOS, KG_DEDUPE_RESOLVER_KLADOS');
     process.exit(1);
   }
 

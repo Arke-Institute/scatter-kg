@@ -1,7 +1,7 @@
 {
   "label": "Scatter KG Extraction",
-  "description": "Scatters entity IDs to KG extractor for parallel knowledge graph extraction",
-  "version": "1.0",
+  "description": "Scatters entity IDs to KG extractor for parallel knowledge graph extraction with deduplication",
+  "version": "1.1",
   "entry": "scatter",
   "flow": {
     "scatter": {
@@ -10,6 +10,10 @@
     },
     "extract": {
       "klados": { "pi": "$KG_EXTRACTOR_KLADOS" },
+      "then": { "scatter": "dedupe" }
+    },
+    "dedupe": {
+      "klados": { "pi": "$KG_DEDUPE_RESOLVER_KLADOS" },
       "then": { "done": true }
     }
   }

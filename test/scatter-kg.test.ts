@@ -1,11 +1,11 @@
 /**
  * Scatter KG Workflow Test
  *
- * Tests the scatter → KG extractor workflow:
+ * Tests the scatter → extract → dedupe workflow:
  * 1. Creates text entities for KG extraction
  * 2. Creates a manifest entity as the workflow target
  * 3. Invokes workflow with entity IDs via input.entity_ids
- * 4. Waits for scatter + KG extraction to complete
+ * 4. Waits for scatter + extract + dedupe to complete
  * 5. Verifies all logs succeeded
  */
 
@@ -30,6 +30,7 @@ const NETWORK = (process.env.ARKE_NETWORK || 'test') as 'test' | 'main';
 const SCATTER_KG_RHIZA = process.env.SCATTER_KG_RHIZA;
 const SCATTER_KLADOS = process.env.SCATTER_KLADOS;
 const KG_EXTRACTOR_KLADOS = process.env.KG_EXTRACTOR_KLADOS;
+const KG_DEDUPE_RESOLVER_KLADOS = process.env.KG_DEDUPE_RESOLVER_KLADOS;
 
 // Sample texts for KG extraction (short but meaningful)
 const SAMPLE_TEXTS = [
@@ -52,8 +53,8 @@ describe('scatter-kg workflow', () => {
       console.warn('Skipping tests: ARKE_USER_KEY not set');
       return;
     }
-    if (!SCATTER_KG_RHIZA || !SCATTER_KLADOS || !KG_EXTRACTOR_KLADOS) {
-      console.warn('Skipping tests: Missing env vars (SCATTER_KG_RHIZA, SCATTER_KLADOS, KG_EXTRACTOR_KLADOS)');
+    if (!SCATTER_KG_RHIZA || !SCATTER_KLADOS || !KG_EXTRACTOR_KLADOS || !KG_DEDUPE_RESOLVER_KLADOS) {
+      console.warn('Skipping tests: Missing env vars (SCATTER_KG_RHIZA, SCATTER_KLADOS, KG_EXTRACTOR_KLADOS, KG_DEDUPE_RESOLVER_KLADOS)');
       return;
     }
 
@@ -67,7 +68,7 @@ describe('scatter-kg workflow', () => {
   });
 
   beforeAll(async () => {
-    if (!ARKE_USER_KEY || !SCATTER_KG_RHIZA || !SCATTER_KLADOS || !KG_EXTRACTOR_KLADOS) return;
+    if (!ARKE_USER_KEY || !SCATTER_KG_RHIZA || !SCATTER_KLADOS || !KG_EXTRACTOR_KLADOS || !KG_DEDUPE_RESOLVER_KLADOS) return;
 
     log('Creating test fixtures...');
 
@@ -109,7 +110,7 @@ describe('scatter-kg workflow', () => {
   });
 
   afterAll(async () => {
-    if (!ARKE_USER_KEY || !SCATTER_KG_RHIZA || !SCATTER_KLADOS || !KG_EXTRACTOR_KLADOS) return;
+    if (!ARKE_USER_KEY || !SCATTER_KG_RHIZA || !SCATTER_KLADOS || !KG_EXTRACTOR_KLADOS || !KG_DEDUPE_RESOLVER_KLADOS) return;
 
     // Cleanup disabled for debugging
     log('Cleanup DISABLED for inspection');
@@ -136,7 +137,7 @@ describe('scatter-kg workflow', () => {
   // Tests
   // ==========================================================================
 
-  it('should scatter entities to KG extractor for parallel extraction', async () => {
+  it('should scatter entities through extract and dedupe pipeline', async () => {
     if (!ARKE_USER_KEY || !SCATTER_KG_RHIZA) {
       console.warn('Test skipped: missing environment variables');
       return;
@@ -191,8 +192,12 @@ describe('scatter-kg workflow', () => {
     // Find extract logs (by klados_id)
     const extractLogs = logs.filter(l => l.properties?.klados_id === KG_EXTRACTOR_KLADOS);
 
+    // Find dedupe logs (by klados_id)
+    const dedupeLogs = logs.filter(l => l.properties?.klados_id === KG_DEDUPE_RESOLVER_KLADOS);
+
     log(`Scatter log: ${scatterLog?.id} (status: ${scatterLog?.properties?.status})`);
     log(`Extract logs: ${extractLogs.length}`);
+    log(`Dedupe logs: ${dedupeLogs.length}`);
 
     // Verify scatter succeeded
     expect(scatterLog).toBeDefined();
@@ -207,8 +212,18 @@ describe('scatter-kg workflow', () => {
       expect(extractLog.properties?.status).toBe('done');
     }
 
+    // Verify dedupe ran for extracted entities
+    // Note: dedupe logs >= extract logs (each extract can produce multiple entities)
+    expect(dedupeLogs.length).toBeGreaterThanOrEqual(1);
+
+    for (const dedupeLog of dedupeLogs) {
+      log(`  - Dedupe ${dedupeLog.id}: ${dedupeLog.properties?.status}`);
+      expect(dedupeLog.properties?.status).toBe('done');
+    }
+
     log('Scatter KG workflow completed successfully!');
     log(`  - Scattered ${entityIds.length} entities`);
     log(`  - KG extraction completed for all entities`);
-  }, 360000); // 6 minute test timeout
+    log(`  - Deduplication completed for ${dedupeLogs.length} entities`);
+  }, 600000); // 10 minute test timeout (dedupe adds time)
 });
