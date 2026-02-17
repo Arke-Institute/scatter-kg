@@ -89,7 +89,7 @@ describe('scatter-kg workflow', () => {
           content: SAMPLE_TEXTS[i],
           created_at: new Date().toISOString(),
         },
-        collectionId: targetCollection.id,
+        collection: targetCollection.id,
       });
       textEntities.push(entity);
       log(`Created text entity ${i + 1}: ${entity.id}`);
@@ -104,7 +104,7 @@ describe('scatter-kg workflow', () => {
         entity_count: textEntities.length,
         created_at: new Date().toISOString(),
       },
-      collectionId: targetCollection.id,
+      collection: targetCollection.id,
     });
     log(`Created manifest entity: ${manifestEntity.id}`);
   });

@@ -132,7 +132,7 @@ async function main() {
   console.log(`Entry: ${config.entry}`);
   console.log(`Steps: ${Object.keys(config.flow).length}`);
   for (const [stepName, step] of Object.entries(config.flow)) {
-    console.log(`  - ${stepName}: ${step.klados.pi}`);
+    console.log(`  - ${stepName}: ${step.klados.id}`);
   }
   console.log('');
 
