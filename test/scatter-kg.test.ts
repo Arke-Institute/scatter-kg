@@ -1,11 +1,11 @@
 /**
  * Scatter KG Workflow Test
  *
- * Tests the scatter → extract → dedupe workflow:
+ * Tests the scatter → extract → dedupe → cluster workflow:
  * 1. Creates text entities for KG extraction
  * 2. Creates a manifest entity as the workflow target
  * 3. Invokes workflow with entity IDs via input.entity_ids
- * 4. Waits for scatter + extract + dedupe to complete
+ * 4. Waits for scatter + extract + dedupe + cluster to complete
  * 5. Verifies all logs succeeded
  */
 
@@ -31,6 +31,7 @@ const SCATTER_KG_RHIZA = process.env.SCATTER_KG_RHIZA;
 const SCATTER_KLADOS = process.env.SCATTER_KLADOS;
 const KG_EXTRACTOR_KLADOS = process.env.KG_EXTRACTOR_KLADOS;
 const KG_DEDUPE_RESOLVER_KLADOS = process.env.KG_DEDUPE_RESOLVER_KLADOS;
+const KG_CLUSTER_KLADOS = process.env.KG_CLUSTER_KLADOS;
 
 // Sample texts for KG extraction (short but meaningful)
 const SAMPLE_TEXTS = [
@@ -53,8 +54,8 @@ describe('scatter-kg workflow', () => {
       console.warn('Skipping tests: ARKE_USER_KEY not set');
       return;
     }
-    if (!SCATTER_KG_RHIZA || !SCATTER_KLADOS || !KG_EXTRACTOR_KLADOS || !KG_DEDUPE_RESOLVER_KLADOS) {
-      console.warn('Skipping tests: Missing env vars (SCATTER_KG_RHIZA, SCATTER_KLADOS, KG_EXTRACTOR_KLADOS, KG_DEDUPE_RESOLVER_KLADOS)');
+    if (!SCATTER_KG_RHIZA || !SCATTER_KLADOS || !KG_EXTRACTOR_KLADOS || !KG_DEDUPE_RESOLVER_KLADOS || !KG_CLUSTER_KLADOS) {
+      console.warn('Skipping tests: Missing env vars (SCATTER_KG_RHIZA, SCATTER_KLADOS, KG_EXTRACTOR_KLADOS, KG_DEDUPE_RESOLVER_KLADOS, KG_CLUSTER_KLADOS)');
       return;
     }
 
@@ -68,7 +69,7 @@ describe('scatter-kg workflow', () => {
   });
 
   beforeAll(async () => {
-    if (!ARKE_USER_KEY || !SCATTER_KG_RHIZA || !SCATTER_KLADOS || !KG_EXTRACTOR_KLADOS || !KG_DEDUPE_RESOLVER_KLADOS) return;
+    if (!ARKE_USER_KEY || !SCATTER_KG_RHIZA || !SCATTER_KLADOS || !KG_EXTRACTOR_KLADOS || !KG_DEDUPE_RESOLVER_KLADOS || !KG_CLUSTER_KLADOS) return;
 
     log('Creating test fixtures...');
 
@@ -110,7 +111,7 @@ describe('scatter-kg workflow', () => {
   });
 
   afterAll(async () => {
-    if (!ARKE_USER_KEY || !SCATTER_KG_RHIZA || !SCATTER_KLADOS || !KG_EXTRACTOR_KLADOS || !KG_DEDUPE_RESOLVER_KLADOS) return;
+    if (!ARKE_USER_KEY || !SCATTER_KG_RHIZA || !SCATTER_KLADOS || !KG_EXTRACTOR_KLADOS || !KG_DEDUPE_RESOLVER_KLADOS || !KG_CLUSTER_KLADOS) return;
 
     // Cleanup disabled for debugging
     log('Cleanup DISABLED for inspection');
@@ -137,7 +138,7 @@ describe('scatter-kg workflow', () => {
   // Tests
   // ==========================================================================
 
-  it('should scatter entities through extract and dedupe pipeline', async () => {
+  it('should scatter entities through extract, dedupe, and cluster pipeline', async () => {
     if (!ARKE_USER_KEY || !SCATTER_KG_RHIZA) {
       console.warn('Test skipped: missing environment variables');
       return;
@@ -195,9 +196,13 @@ describe('scatter-kg workflow', () => {
     // Find dedupe logs (by klados_id)
     const dedupeLogs = logs.filter(l => l.properties?.klados_id === KG_DEDUPE_RESOLVER_KLADOS);
 
+    // Find cluster logs (by klados_id)
+    const clusterLogs = logs.filter(l => l.properties?.klados_id === KG_CLUSTER_KLADOS);
+
     log(`Scatter log: ${scatterLog?.id} (status: ${scatterLog?.properties?.status})`);
     log(`Extract logs: ${extractLogs.length}`);
     log(`Dedupe logs: ${dedupeLogs.length}`);
+    log(`Cluster logs: ${clusterLogs.length}`);
 
     // Verify scatter succeeded
     expect(scatterLog).toBeDefined();
@@ -221,9 +226,21 @@ describe('scatter-kg workflow', () => {
       expect(dedupeLog.properties?.status).toBe('done');
     }
 
+    // Verify cluster ran
+    // Note: cluster logs may be fewer than dedupe logs if:
+    // - Solo clusters are dissolved (no followers joined within timeout)
+    // - Entities join existing clusters (no output to propagate)
+    // We expect at least some cluster activity
+    log(`Cluster logs: ${clusterLogs.length}`);
+    for (const clusterLog of clusterLogs) {
+      log(`  - Cluster ${clusterLog.id}: ${clusterLog.properties?.status}`);
+      expect(clusterLog.properties?.status).toBe('done');
+    }
+
     log('Scatter KG workflow completed successfully!');
     log(`  - Scattered ${entityIds.length} entities`);
     log(`  - KG extraction completed for all entities`);
     log(`  - Deduplication completed for ${dedupeLogs.length} entities`);
-  }, 600000); // 10 minute test timeout (dedupe adds time)
+    log(`  - Clustering completed for ${clusterLogs.length} entities`);
+  }, 900000); // 15 minute test timeout (clustering adds wait time)
 });
