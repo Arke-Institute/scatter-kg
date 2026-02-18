@@ -1,7 +1,7 @@
 {
   "label": "Scatter KG Extraction",
-  "description": "Scatters entity IDs to KG extractor for parallel knowledge graph extraction, deduplication, and clustering",
-  "version": "1.2",
+  "description": "Scatters entity IDs to KG extractor for parallel knowledge graph extraction, deduplication, clustering, and description",
+  "version": "1.4",
   "entry": "scatter",
   "flow": {
     "scatter": {
@@ -18,6 +18,21 @@
     },
     "cluster": {
       "klados": { "id": "$KG_CLUSTER_KLADOS" },
+      "input": {
+        "initial_delay_max_ms": 30000,
+        "follower_wait_min_ms": 30000,
+        "follower_wait_max_ms": 60000,
+        "follower_poll_interval_ms": 5000
+      },
+      "then": { "scatter": "describe" }
+    },
+    "describe": {
+      "klados": { "id": "$DESCRIBE_KLADOS" },
+      "input": {
+        "update_label": true,
+        "style": "detailed",
+        "custom_instructions": "This entity is a cluster representing a thematic grouping of related entities from a knowledge graph extraction. Your task is to synthesize a cohesive description that captures the shared theme or concept that unites these entities. DO NOT simply list what the cluster contains - instead, identify the underlying theme and describe it as a unified concept. The title should be a clear, human-readable name for this thematic grouping (not 'cluster' or technical terms). The description should explain what this theme represents and why these entities belong together."
+      },
       "then": { "done": true }
     }
   }
