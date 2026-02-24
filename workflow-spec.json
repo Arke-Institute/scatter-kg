@@ -1,0 +1,189 @@
+{
+  "schema_version": "1.0",
+
+  "label": "Scatter KG Extraction",
+  "description": "End-to-end knowledge graph extraction pipeline that scatters text chunks to parallel extraction, deduplication, clustering, and description.",
+
+  "detailed_description": "## Overview\n\nThe Scatter KG workflow is a complete knowledge graph extraction pipeline. Given a set of text chunk entity IDs, it:\n\n1. **Scatters** the IDs to parallel extraction jobs\n2. **Extracts** entities and relationships from each chunk using Gemini\n3. **Deduplicates** extracted entities via semantic similarity matching\n4. **Clusters** similar entities into thematic groups\n5. **Describes** each cluster with a synthesized description\n\n## How It Works\n\nThe workflow uses rhiza's scatter handoff pattern. Each step outputs entity IDs that are scattered to the next step for parallel processing. This enables processing thousands of text chunks efficiently.\n\n### Pipeline Flow\n\n```\nentity_ids → [scatter] → [extract] → [dedupe] → [cluster] → [describe] → clusters\n                ↓            ↓           ↓           ↓\n           fan-out      per-chunk   per-entity  per-entity\n```\n\n## When to Use\n\n- Processing multiple text chunks from a chunked document\n- Building a knowledge graph from a corpus of text\n- When you want single-layer clustering (use scatter-kg-recursive for hierarchical)\n\n## Key Features\n\n- Fully parallel processing via scatter handoffs\n- Automatic deduplication prevents duplicate entities\n- Semantic clustering groups related entities\n- Human-readable cluster descriptions\n\n## Limitations\n\n- Produces single-layer clustering only (not hierarchical)\n- All chunks should be from related content for best clustering results\n- Large workflows (1000+ chunks) may take 10+ minutes to complete",
+
+  "input": {
+    "entity": {
+      "types": ["*"],
+      "types_description": "Target entity is not directly used. The workflow operates on entity_ids passed via invoke parameters.",
+      "properties": {
+        "required": {},
+        "optional": {}
+      }
+    },
+
+    "invoke_params": {
+      "description": "Parameters passed when invoking the workflow via /rhizai/{id}/invoke",
+      "properties": {
+        "required": {
+          "entity_ids": {
+            "type": "string[]",
+            "description": "Array of entity IDs to process. Typically text_chunk entities from Text Chunker.",
+            "minItems": 1,
+            "examples": [
+              ["CHUNK_001", "CHUNK_002", "CHUNK_003"],
+              ["TEXT_A", "TEXT_B"]
+            ]
+          }
+        },
+        "optional": {
+          "target_collection": {
+            "type": "string",
+            "description": "Collection where extracted entities will be created. If not specified, uses workflow's default collection."
+          }
+        }
+      }
+    }
+  },
+
+  "output": {
+    "entities": {
+      "creates": {
+        "types": ["person", "organization", "place", "event", "concept", "object", "cluster"],
+        "description": "Extracted entities from text plus cluster entities grouping similar entities.",
+        "notes": "Entity types depend on content. Clusters are created by the cluster step and described by the describe step."
+      }
+    },
+
+    "workflow_result": {
+      "description": "Final output is cluster entities with descriptions. Each cluster's `summarized_by` relationships link to member entities. The cluster `description` property contains a synthesized summary of the cluster's theme.",
+      "typical_output": "10-100 cluster entities (depends on extraction volume and semantic similarity)"
+    }
+  },
+
+  "flow_summary": [
+    {
+      "step": "scatter",
+      "klados": "Scatter Utility",
+      "description": "Receives entity_ids from invoke params and scatters them to the extract step for parallel processing."
+    },
+    {
+      "step": "extract",
+      "klados": "KG Extractor",
+      "description": "Extracts entities and relationships from each text chunk using Gemini. Creates entities in target_collection. Outputs newly created entity IDs.",
+      "parallelism": "One job per input chunk, all run in parallel"
+    },
+    {
+      "step": "dedupe",
+      "klados": "KG Dedupe Resolver",
+      "description": "For each extracted entity, searches for semantic duplicates and creates same_as relationships. Outputs the entity ID unchanged.",
+      "parallelism": "One job per extracted entity"
+    },
+    {
+      "step": "cluster",
+      "klados": "KG Cluster",
+      "description": "Groups semantically similar entities into clusters. Uses relationship-based discovery to find or create cluster leaders. Outputs cluster leader ID (or empty if entity joins existing cluster as follower).",
+      "parallelism": "One job per entity, with coordination via relationship checking",
+      "timing_params": {
+        "initial_delay_max_ms": 30000,
+        "follower_wait_min_ms": 30000,
+        "follower_wait_max_ms": 60000,
+        "follower_poll_interval_ms": 5000
+      }
+    },
+    {
+      "step": "describe",
+      "klados": "Describe",
+      "description": "Generates descriptions for cluster leaders. Uses custom instructions to synthesize thematic descriptions rather than listing members.",
+      "parallelism": "One job per cluster leader",
+      "params": {
+        "update_label": true,
+        "style": "detailed"
+      }
+    }
+  ],
+
+  "examples": [
+    {
+      "name": "Process chunked document",
+      "description": "Extract knowledge graph from a document that was split into 5 chunks",
+
+      "invoke": {
+        "method": "POST /rhizai/{rhiza_id}/invoke",
+        "body": {
+          "entity_ids": ["CHUNK_001", "CHUNK_002", "CHUNK_003", "CHUNK_004", "CHUNK_005"],
+          "target_collection": "COLLECTION_KG_OUTPUT"
+        }
+      },
+
+      "expected_flow": [
+        "scatter: Fans out 5 chunk IDs",
+        "extract: 5 parallel extractions, produces ~50 entities total",
+        "dedupe: 50 parallel dedupe jobs, links ~10 duplicate pairs",
+        "cluster: 50 parallel cluster jobs, produces ~8 cluster leaders",
+        "describe: 8 parallel describe jobs, generates cluster descriptions"
+      ],
+
+      "typical_output": {
+        "clusters_created": 8,
+        "entities_extracted": 50,
+        "duplicates_linked": 10,
+        "duration": "2-5 minutes"
+      }
+    },
+
+    {
+      "name": "Single chunk extraction",
+      "description": "Process a single text chunk (minimal case)",
+
+      "invoke": {
+        "body": {
+          "entity_ids": ["SINGLE_CHUNK"]
+        }
+      },
+
+      "expected_flow": [
+        "scatter: Passes through 1 ID",
+        "extract: Extracts ~10 entities",
+        "dedupe: 10 dedupe jobs (likely no duplicates)",
+        "cluster: 10 cluster jobs, produces ~3 clusters",
+        "describe: 3 describe jobs"
+      ]
+    }
+  ],
+
+  "metadata": {
+    "version": "1.4",
+    "author": "Arke Institute",
+
+    "tags": ["knowledge-graph", "extraction", "pipeline", "scatter", "clustering", "deduplication"],
+
+    "typical_duration": {
+      "small": "1-2 minutes (1-10 chunks)",
+      "medium": "2-5 minutes (10-50 chunks)",
+      "large": "5-15 minutes (50-200 chunks)",
+      "notes": "Duration depends on chunk count, text length, and extraction richness"
+    },
+
+    "cost_estimate": {
+      "per_chunk": "$0.01-0.05 (Gemini extraction + dedupe + describe)",
+      "example": "100 chunks ≈ $1-5 total",
+      "breakdown": {
+        "extract": "~60% (Gemini for entity extraction)",
+        "dedupe": "~15% (Gemini for similarity judgment)",
+        "cluster": "~5% (Arke API only)",
+        "describe": "~20% (Gemini for cluster descriptions)"
+      }
+    },
+
+    "related_workflows": [
+      {
+        "label": "scatter-kg-recursive",
+        "description": "Variant with recursive clustering that builds hierarchical cluster trees",
+        "when": "Need multi-level organization of entities"
+      }
+    ],
+
+    "prerequisites": [
+      {
+        "label": "Text Chunker",
+        "description": "Split documents into chunks before running this workflow",
+        "when": "Source is a large document rather than pre-chunked text"
+      }
+    ]
+  }
+}
